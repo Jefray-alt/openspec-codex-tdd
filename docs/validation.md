@@ -1,61 +1,67 @@
 # Validation record
 
-Run date: 2026-10-21. Local environment: Linux, Python 3.14.4, OpenSpec 1.14.3,
-Codex CLI 0.163.0-alpha.10.2. All work used new disposable repositories, plus
-this new bundle repository. Existing project repositories were not modified.
+## v0.2.0: Markdown-only skill
 
-## Automated checks
+The installed skill consists of `SKILL.md` and `references/protocol.md`. Native
+Codex agent definitions remain declarative TOML. No executable helper is installed
+or invoked by the workflow. The optional distribution installer remains outside
+the skill, with tests for safe installation, updates, removal and migration.
 
-`python3 -m unittest discover -s tests -v`: **26 tests passed**.
+The current validation checks include skill frontmatter, agent/example TOML,
+Markdown-only installed contents, unchanged-instruction preservation, dry-run,
+idempotent updates, file collisions, dirty-tree and symlink refusals, local-edit
+protection, safe removal of the previous managed runtime file, and actual
+OpenSpec apply coordinates/guidance plus refresh survival.
 
-Coverage includes:
+On 2026-10-21, `python3 -m unittest discover -s tests -v` passed all **11**
+distribution/migration/compatibility tests. The skill creator's
+`quick_validate.py` also passed. Local environment: Linux, Python 3.14.4 and
+OpenSpec 1.14.3. CI remains configured for Python 3.11/3.13 and the same OpenSpec
+baseline; its result is separate from these local checks.
 
-- Successful task creates exactly one commit, only its relevant files and one checkbox.
-- Dirty user files, staged changes, moved HEAD and premature checkbox edits stop.
-- Initial RED cannot follow production edits; passing/empty test runs are not RED.
-- First GREEN reruns the same focused RED command; final checks are required.
-- Changed candidates, stale reviews and failed command launches invalidate completion.
-- Developer/reviewer IDs must differ; three rejections exhaust the budget;
-  a third-round PASS can commit; a blocked review stops immediately.
-- A failing Git hook creates no commit and preserves the work/index for recovery.
-- Repository locks, symlink escapes, installation collisions and local customizations.
-- Dry-run, install, idempotent update, uninstall and exclusion of generated Python caches.
-- Actual OpenSpec initialization, apply task coordinates, operation guidance,
-  and persistence of custom skills/agents/routing through `openspec update`.
+These checks validate packaging. They do not establish that an agent will follow
+TDD, count retries accurately, preserve candidate freshness or review well.
+Independent behavioral evaluation is recorded below.
 
-The skill creator's `quick_validate.py` also passed. Agent and example TOML parsed
-successfully. GitHub Actions is configured to repeat helper tests on Python 3.11
-and 3.13, plus the OpenSpec 1.14.3 smoke check. Those CI jobs are separate from
-the local result reported here.
+## Independent Markdown-only forward tests
 
-## Independent agent forward tests
+A separate evaluator used the v0.2.0 development payload in disposable local
+OpenSpec repositories. Actual separate developer and reviewer agents used the
+generic-agent fallback with the supplied TOML instructions, each started without
+forked context. No runtime helper, replacement script, hook or workflow state
+file was used. Test evidence and review rounds stayed in the conversation.
 
-A separate evaluating agent installed the workflow into a newly initialized
-OpenSpec fixture, then introduced an unrelated user edit. Apply discovery found
-the pending task, and guard begin refused before implementation. The edit was
-preserved byte-for-byte, the checkbox stayed unchecked and no task commit occurred.
+The developer wrote three assertions for ordinary, empty and Unicode names
+against a committed greet(name) stub returning None. Before production edits,
+the focused command failed with three intended assertion failures (exit 1);
+native Git inspection showed production still matched the baseline. The exact
+same focused command then passed (exit 0), as did final full discovery and
+whitespace checks. No forced refactoring was needed.
 
-On a second clean fixture, the evaluator orchestrated a separate developer and
-a fresh reviewer with raw requirements, files and evidence. The developer's
-initial test asserted greeting behavior while the committed stub returned None.
-Observed RED: assertion failure, exit 1. Focused GREEN: exit 0. Final regression
-discovery: exit 0. The reviewer independently inspected the complete candidate
-and raw logs, reran focused/discovery tests, verified the candidate digest, and
-returned PASS with no findings on the first review round.
+The fresh independent reviewer inspected raw requirements, complete tracked/new
+files and actual output, independently reran the checks, and returned PASS with
+no findings on round 1. Both agents finished before staging. Native Git checks
+verified the candidate was unchanged, the staged paths were exact, and only the
+selected checkbox changed in the tracking file.
 
-The resulting task commit (`1f58c7f` in the disposable fixture) contained exactly
-`greeting.py`, `test_greeting.py` and the task tracking file. The one selected
-checkbox was checked and the final working tree was clean. The fixture hash is
-local test evidence, not a commit in this distribution repository.
+The resulting fixture commit `5bc6ce81c4af33120b8e4ff2121f2262ac78c6c8`
+contained exactly `greeting.py`, `test_greeting.py` and the task file. Its parent
+matched the recorded baseline, its tree matched precommit `git write-tree`, the
+working tree/index were clean, and refreshed OpenSpec reported `all_done`, 1/1.
+This is a local fixture commit, not a distribution repository commit.
 
-The forward test used generic Codex subagents with the supplied role instructions,
-as supported by the protocol fallback; it did not verify named custom-agent
-selection by every Codex client. The fixture was installed before the final
-Python-cache filtering and exact-GREEN-command improvements; the final automated
-suite verifies those changes. This bounded example supports the workflow, but
-does not prove model adherence or review quality on arbitrary future tasks.
+In a separate dirty-tree fixture, the evaluator observed an unrelated user edit
+and stopped before development, tests, checkbox updates or commits. The edit's
+content hash, HEAD and unchecked task were preserved, with an empty index.
 
-The evaluation also found that recursive payload copying could include generated
-Python cache files. The final installer filters them out and a regression test
-checks this behavior. Final task results and distribution files contain no such
-caches.
+These trials demonstrate agent compliance on bounded examples, not mechanical
+enforcement or a guarantee for arbitrary future tasks. Named custom-agent
+selection in every Codex client and adversarial/concurrent writers were not
+validated.
+
+## Earlier v0.1.0 validation
+
+The initial scripted version passed 26 local tests, GitHub Actions and a separate
+developer/reviewer task trial. Those runtime-guard tests and their guarantees do
+not apply to v0.2.0: the helper has been removed. Historical evidence remains in
+the `v0.1.0` Git tag rather than being presented as validation of this workflow.

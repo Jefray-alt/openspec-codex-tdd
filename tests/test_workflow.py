@@ -1,5 +1,6 @@
 import json
 import importlib.util
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -10,15 +11,8 @@ import tomllib
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-GUARD = ROOT / 'payload/.agents/skills/openspec-tdd-apply/scripts/task_guard.py'
 MANAGE = ROOT / 'scripts/manage.py'
 TASKS = 'openspec/changes/greeting/tasks.md'
-TEST = '''import unittest
-from greeting import greet
-class GreetingTest(unittest.TestCase):
-    def test_greeting(self):
-        self.assertEqual(greet("Ada"), "Hello, Ada!")
-'''
 
 
 class Repository(unittest.TestCase):
@@ -59,180 +53,57 @@ class Repository(unittest.TestCase):
         self.git('add', '--all')
         self.git('commit', '-m', 'fixture')
 
-    def guard(self, *args, **kwargs):
-        return self.command([sys.executable, str(GUARD), *args], **kwargs)
-
     def manage(self, mode, *args, **kwargs):
         return self.command([sys.executable, str(MANAGE), mode, '--project', str(self.repo), *args], **kwargs)
 
-    def begin(self):
-        return self.guard('begin', '--task-file', TASKS, '--line', '3', '--allow', 'greeting.py',
-                          '--allow', 'test_greeting.py', '--test', 'test_greeting.py')
-
-    def phase(self, name, ok=True):
-        return self.guard('check', '--phase', name, '--', sys.executable, '-m', 'unittest', 'test_greeting', ok=ok)
-
-    def ready(self):
-        self.begin()
-        self.write('test_greeting.py', TEST)
-        self.phase('red')
-        self.write('greeting.py', 'def greet(name):\n    return f"Hello, {name}!"\n')
-        self.phase('green')
-        self.phase('refactor')
-        return json.loads(self.guard('snapshot').stdout)
-
-    def review(self, snap, verdict='pass', reviewer='reviewer', developer='developer', ok=True):
-        path = self.base / 'review.json'
-        path.write_text(json.dumps(dict(digest=snap['digest'], reviewer_id=reviewer,
-                                       developer_id=developer, verdict=verdict,
-                                       findings=[] if verdict == 'pass' else [{'defect': 'missing edge case'}],
-                                       evidence='Observed assertion RED, passing checks and raw diff inspected.')))
-        return self.guard('review', '--report', str(path), ok=ok)
-
-
-class GuardTests(Repository):
-    def test_success_is_one_commit_with_only_task_files_and_one_checkbox(self):
-        initial = self.git('rev-parse', 'HEAD')
-        snap = self.ready()
-        self.review(snap)
-        result = json.loads(self.guard('commit', '--message', 'feat: greeting task 1.1').stdout)
-        self.assertEqual(self.git('rev-list', '--count', initial + '..HEAD'), '1')
-        self.assertEqual(self.git('rev-parse', 'HEAD^'), initial)
-        self.assertEqual(set(result['files']), {TASKS, 'greeting.py', 'test_greeting.py'})
-        text = (self.repo / TASKS).read_text()
-        self.assertIn('- [x] 1.1', text)
-        self.assertIn('- [ ] 1.2', text)
-        self.assertEqual(self.git('status', '--porcelain'), '')
-        self.assertEqual((self.repo / 'user.txt').read_text(), 'keep me\n')
-
-    def test_dirty_user_work_is_preserved(self):
-        self.write('user.txt', 'uncommitted user work\n')
-        self.guard('begin', '--task-file', TASKS, '--line', '3', '--allow', 'test_greeting.py',
-                   '--test', 'test_greeting.py', ok=False)
-        self.assertEqual((self.repo / 'user.txt').read_text(), 'uncommitted user work\n')
-
-    def test_initial_red_rejects_production_changes_and_green_before_red(self):
-        self.begin()
-        self.write('test_greeting.py', TEST)
-        self.phase('green', ok=False)
-        self.write('greeting.py', 'def greet(name):\n    return "changed"\n')
-        self.phase('red', ok=False)
-
-    def test_passing_test_is_not_red(self):
-        self.begin()
-        self.write('test_greeting.py', 'import unittest\nclass Passing(unittest.TestCase):\n    def test_ok(self):\n        self.assertTrue(True)\n')
-        self.phase('red', ok=False)
-
-    def test_empty_test_run_is_not_red(self):
-        self.begin()
-        self.write('test_greeting.py', 'import unittest\n')
-        self.phase('red', ok=False)
-
-    def test_missing_command_invalidates_existing_pass(self):
-        snap = self.ready()
-        self.review(snap)
-        self.guard('check', '--phase', 'refactor', '--', 'definitely-nonexistent-workflow-command', ok=False)
-        self.guard('commit', '--message', 'failed checks', ok=False)
-
-    def test_final_checks_and_pass_are_required(self):
-        self.begin()
-        self.write('test_greeting.py', TEST)
-        self.phase('red')
-        self.write('greeting.py', 'def greet(name):\n    return f"Hello, {name}!"\n')
-        self.phase('green')
-        self.guard('snapshot', ok=False)
-        self.phase('refactor')
-        self.guard('commit', '--message', 'no review', ok=False)
-
-    def test_first_green_must_rerun_the_red_command(self):
-        self.begin()
-        self.write('test_greeting.py', TEST)
-        self.phase('red')
-        self.write('greeting.py', 'def greet(name):\n    return f"Hello, {name}!"\n')
-        self.guard('check', '--phase', 'green', '--', sys.executable, '-m', 'unittest', 'discover', ok=False)
-        self.phase('green')
-
-    def test_mutation_invalidates_tests_and_review(self):
-        snap = self.ready()
-        self.review(snap)
-        self.write('greeting.py', 'def greet(name):\n    return f"Hello, {name}!"  # changed\n')
-        self.guard('commit', '--message', 'stale', ok=False)
-        self.phase('refactor')
-        self.review(snap, ok=False)
-        self.guard('commit', '--message', 'still stale', ok=False)
-
-    def test_out_of_scope_staging_and_checkbox_edits_stop(self):
-        self.ready()
-        self.write('user.txt', 'another writer\n')
-        self.guard('snapshot', ok=False)
-        self.write('user.txt', 'keep me\n')
-        self.git('add', 'greeting.py')
-        self.guard('snapshot', ok=False)
-
-    def test_checkbox_cannot_change_before_review(self):
-        self.ready()
-        self.write(TASKS, (self.repo / TASKS).read_text().replace('- [ ]', '- [x]', 1))
-        self.guard('snapshot', ok=False)
-
-    def test_same_actor_cannot_review_and_three_rejections_exhaust_budget(self):
-        snap = self.ready()
-        self.review(snap, reviewer='same', developer='same', ok=False)
-        for _ in range(3):
-            self.review(snap, verdict='changes_requested')
-        self.review(snap, ok=False)
-        self.phase('refactor', ok=False)
-        self.guard('commit', '--message', 'exhausted', ok=False)
-
-    def test_third_round_pass_can_commit(self):
-        snap = self.ready()
-        self.review(snap, verdict='changes_requested')
-        self.review(snap, verdict='changes_requested')
-        self.review(snap)
-        self.guard('commit', '--message', 'feat: third review passed')
-
-    def test_blocked_review_stops_immediately(self):
-        snap = self.ready()
-        self.review(snap, verdict='blocked')
-        self.review(snap, ok=False)
-        self.guard('commit', '--message', 'blocked', ok=False)
-
-    def test_head_move_stops(self):
-        self.begin()
-        self.git('commit', '--allow-empty', '-m', 'another actor')
-        self.guard('snapshot', ok=False)
-
-    def test_lock_and_abort_preserve_work(self):
-        self.begin()
-        self.begin_failure = self.guard('begin', '--task-file', TASKS, '--line', '3', '--allow',
-                                       'test_greeting.py', '--test', 'test_greeting.py', ok=False)
-        self.write('test_greeting.py', TEST)
-        self.guard('abort')
-        self.assertEqual((self.repo / 'test_greeting.py').read_text(), TEST)
-
-    def test_hook_failure_preserves_work_and_creates_no_commit(self):
-        snap = self.ready()
-        self.review(snap)
-        before = self.git('rev-parse', 'HEAD')
-        hook = self.repo / '.git/hooks/pre-commit'
-        hook.write_text('#!/bin/sh\nexit 1\n')
-        hook.chmod(0o755)
-        self.guard('commit', '--message', 'hook fails', ok=False)
-        self.assertEqual(self.git('rev-parse', 'HEAD'), before)
-        self.assertTrue(self.git('diff', '--cached', '--name-only'))
-        self.assertIn('- [x] 1.1', (self.repo / TASKS).read_text())
-
-    def test_symlink_escape_rejected(self):
-        outside = self.base / 'outside'
-        outside.mkdir()
-        (self.repo / 'escape').symlink_to(outside, target_is_directory=True)
-        self.git('add', 'escape')
-        self.git('commit', '-m', 'symlink fixture')
-        self.guard('begin', '--task-file', TASKS, '--line', '3', '--allow', 'escape/test.py',
-                   '--test', 'escape/test.py', ok=False)
-        self.assertEqual(list(outside.iterdir()), [])
 
 
 class InstallerTests(Repository):
+    def legacy_install(self):
+        self.manage('install')
+        manifest_path = self.repo / '.openspec-tdd-workflow.json'
+        manifest = json.loads(manifest_path.read_text())
+        # Model the previous manifest's obsolete managed file without requiring
+        # distribution history (tests also work from ZIPs/shallow clones).
+        name = '.agents/skills/openspec-tdd-apply/scripts/task_guard.py'
+        old = b'# Obsolete managed runtime fixture; never executed.\n'
+        path = self.repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(old)
+        manifest['files'][name] = hashlib.sha256(old).hexdigest()
+        manifest['version'] = '0.1.0'
+        manifest_path.write_text(json.dumps(manifest, indent=2) + '\n')
+        self.commit_all()
+
+    def test_upgrade_removes_old_runtime_and_installs_markdown_only(self):
+        self.legacy_install()
+        self.manage('update', '--dry-run')
+        legacy = self.repo / '.agents/skills/openspec-tdd-apply/scripts/task_guard.py'
+        self.assertTrue(legacy.exists())
+        self.manage('update')
+        self.assertFalse(legacy.exists())
+        skill = self.repo / '.agents/skills/openspec-tdd-apply'
+        files = {str(p.relative_to(skill)) for p in skill.rglob('*') if p.is_file()}
+        self.assertEqual(files, {'SKILL.md', 'references/protocol.md'})
+        manifest = json.loads((self.repo / '.openspec-tdd-workflow.json').read_text())
+        self.assertEqual(manifest['version'], (ROOT / 'VERSION').read_text().strip())
+        self.assertNotIn(str(legacy.relative_to(self.repo)), manifest['files'])
+
+    def test_modified_legacy_runtime_is_preserved_on_update_failure(self):
+        self.legacy_install()
+        legacy = self.repo / '.agents/skills/openspec-tdd-apply/scripts/task_guard.py'
+        legacy.write_text(legacy.read_text() + '\n# local edits\n')
+        self.commit_all()
+        self.manage('update', ok=False)
+        self.assertIn('# local edits', legacy.read_text())
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_fresh_install_has_only_markdown_in_skill(self):
+        self.manage('install')
+        skill = self.repo / '.agents/skills/openspec-tdd-apply'
+        files = {str(p.relative_to(skill)) for p in skill.rglob('*') if p.is_file()}
+        self.assertEqual(files, {'SKILL.md', 'references/protocol.md'})
+
     def test_payload_excludes_generated_python_caches(self):
         spec = importlib.util.spec_from_file_location('workflow_manager', MANAGE)
         manager = importlib.util.module_from_spec(spec)

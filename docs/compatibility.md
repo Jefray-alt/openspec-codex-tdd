@@ -1,72 +1,69 @@
 # Compatibility and validation
 
-Verified on 2026-10-21 with OpenSpec **1.14.3**, Codex CLI
-**0.163.0-alpha.10.2**, Git and Python **3.14.4**. Helpers require Python 3.11+;
-CI is configured for 3.11 and 3.13. This is an observed baseline, not
-a promise that every older/newer release behaves identically.
+Conventions checked on 2026-10-21 with OpenSpec **1.14.3** and Codex CLI
+**0.163.0-alpha.10.2**. This is an observed baseline, not a guarantee for every
+older/newer client. The skill runs through ordinary agent tools; it has no
+additional runtime package dependency. The optional repository installer and
+distribution tests use Python 3.11+ (locally exercised with Python 3.14.4).
 
 ## Current conventions and primary sources
 
 | Integration | Convention used | Source |
 | --- | --- | --- |
-| Codex skills | Repository `.agents/skills/<name>/SKILL.md`; explicit `$skill-name` invocation | [OpenAI skill documentation](https://learn.chatgpt.com/docs/build-skills) |
-| Custom agents | Standalone `.codex/agents/*.toml`, with `name`, `description`, `developer_instructions` | [OpenAI subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents) |
-| Agent settings | `[agents] enabled` and `max_concurrent_threads_per_session`; inherit parent model/permissions | [OpenAI subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents) |
-| OpenSpec + Codex | Generated skills; Codex command files are skipped | [OpenSpec setup](https://openspec.dev/docs/setup) and [tool matrix](https://github.com/Fission-AI/OpenSpec/blob/main/docs/supported-tools.md) |
-| Apply inputs | `status` and `instructions apply --change NAME --json`; task coordinates and context | [OpenSpec skills](https://openspec.dev/docs/skills) |
-| Apply guidance | `operations.apply.guidance`; additive advice, separate from artifact `rules` | [OpenSpec customization](https://github.com/Fission-AI/OpenSpec/blob/main/docs/customization.md) |
+| Skill | `.agents/skills/<name>/SKILL.md`, invoked with `$skill-name` | [OpenAI skill documentation](https://learn.chatgpt.com/docs/build-skills) |
+| Agents | Standalone `.codex/agents/*.toml` containing name, description and developer instructions | [OpenAI subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents) |
+| Permissions | Parent permissions are inherited; model/reasoning settings can be configured | [OpenAI subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents) |
+| OpenSpec/Codex | Generated skills; Codex command files skipped | [OpenSpec setup](https://openspec.dev/docs/setup) |
+| Apply | Current status/instructions JSON, task coordinates and context files | [OpenSpec skills](https://openspec.dev/docs/skills) |
+| Guidance | `operations.apply.guidance` is additive advice, separate from artifact rules | [OpenSpec customization](https://github.com/Fission-AI/OpenSpec/blob/main/docs/customization.md) |
 
-Current custom-agent files do not use the older `[agents.role] config_file`
-registration pattern. Older Codex versions may require that format and an
-experimental multi-agent flag. This bundle does not silently write legacy
-configuration. Upgrade, or adapt the files against your installed version's
-documentation and validate them. No model name or reasoning level is pinned.
+The skill contains only Markdown. TOML files are declarative Codex agent
+configuration, not executable helpers. The optional `scripts/manage.py` remains
+outside the skill and is used only to install/update/remove bundle files. The
+installation manifest is packaging metadata, not implementation state.
+
+Current agents use standalone TOML rather than the older `[agents.role]`
+`config_file` registration. Older clients may need legacy configuration and
+experimental multi-agent flags; upgrade or adapt against their documentation.
+The bundle intentionally inherits the parent model and reasoning settings.
 
 ## Supported scope
 
-Local OpenSpec planning and implementation files in **the same Git repository**.
-Each task's checkbox must be a tracked Markdown `- [ ]` line; a custom schema can
-track multiple files if OpenSpec provides a valid path/line for the selected task.
-External stores and multi-repository changes cannot satisfy one atomic commit
-for code plus checkbox and are deliberately unsupported. A detached HEAD is
-permitted by Git but choose a named working branch if you want durable branch
-history. Worktrees are supported, with one guard lock shared across the repo.
+Local planning and implementation in the same Git repository, with a tracked
+Markdown task checkbox. Custom schemas can track several files when the selected
+task can be uniquely located. External stores/multiple repositories cannot put
+code and checkbox in one atomic Git commit and are unsupported.
 
-The guard refuses dirty initial checkouts, staged files, submodules, symlinks in
-managed/allowlisted paths and skip-worktree/assume-unchanged index flags. Use a
-full checkout with committed setup/planning and no active merge/rebase operation.
-Python helpers are platform-neutral; shell examples assume a POSIX terminal.
-Windows Python/Git are plausible but were not executed in this validation.
+Use one clean full checkout or selected worktree, with no concurrent writers,
+unfinished Git operation, submodules, sparse checkout, symlinked task file or
+hidden index entries. The orchestrator must inspect these conditions itself;
+there is no runtime gate or lock. Native commands/tests must be available in the
+parent session. Shell examples assume a POSIX terminal; Windows was not tested.
 
-## What the checks prove
+## Limits
 
-Helper integration tests exercise clean-tree and path safeguards, installation,
-updates, removal, RED/GREEN/REFACTOR recording, digest freshness, bounded reviews,
-explicit staging and a single commit with one checkbox. An OpenSpec CLI smoke
-check initializes a disposable project, reads actual apply JSON and verifies
-that a refresh preserves this bundle. TOML and skill manifests are validated.
+- Skill/AGENTS routing is written guidance, not an OpenSpec interception hook.
+  Use the explicit custom skill when routing is unclear.
+- Clean-tree checks, file scope, temporal TDD, current review, retry counting,
+  explicit staging and commit verification are agent responsibilities. There is
+  no automatic gate, persisted retry counter, content fingerprint or identity
+  authentication. Keep the task ledger and actual evidence in the conversation.
+- A separate reviewer is required, but a different model or isolated read-only
+  OS sandbox is not guaranteed. Custom agents inherit parent permissions.
+- Every candidate change after review requires fresh checks/review within the
+  existing budget. Git hooks/filters and unrelated editors can change files;
+  stop on unexpected changes rather than claim stale approval remains valid.
+- A failed commit can leave a checked checkbox and staged files. Preserve them
+  and report the actual state; do not blindly retry, reset or amend.
+- Distribution tests validate installation/migration, not model behavior.
+  Independent forward tests are bounded samples, not a guarantee on future tasks.
 
-An independent agent evaluates the packaged workflow against a disposable task.
-Its result is reported in [validation notes](validation.md). This is a bounded
-sample, not a guarantee of model adherence on arbitrary projects. No automated
-test can establish semantic review quality merely from a JSON `pass`.
+## Migration from v0.1
 
-## Limits that matter
-
-- Skills and `AGENTS.md` routing are model instructions, not an OpenSpec runtime
-  interception hook. Always use the explicit custom skill when routing is unclear.
-- Agent definitions cannot grant a separate read-only sandbox. The reviewer is
-  instructed not to write; it inherits the parent session's permissions. The
-  orchestrator checks that the candidate stayed unchanged.
-- The guard verifies reported identities differ, but does not authenticate them.
-  The orchestrator must use actual separate runtime agents and retain their output.
-- Exit statuses and phase ordering establish execution records, not whether a
-  test failed for the right reason. Reviewers must inspect assertion output,
-  acceptance coverage and the diff, and rerun checks where possible.
-- Stop all writers during review/commit. The cooperative lock cannot prevent an
-  unrelated editor from racing Git. Project hooks and filters remain trusted.
-- A failed hook/commit leaves work available for recovery and can leave the
-  checkbox/index modified. Do not claim success or retry/amend without inspection.
-- Evidence logs live in the Git common directory and are not committed. Retain
-  them separately if your team needs an audit trail. Commit only task-relevant
-  evidence explicitly required by the project, never incidental logs.
+The updater removes the old managed `scripts/task_guard.py` only when its hash
+still matches the previous installation manifest. Local modifications stop the
+update for manual reconciliation. No new implementation helper replaces it.
+Finish or explicitly stop active v0.1 agents before updating. Keep old local
+Git-directory evidence if needed; the Markdown skill never reads it or resets
+an unresolved review budget. Generated local caches/empty directories may need
+reviewed cleanup; never delete unrelated files to make the skill look empty.
