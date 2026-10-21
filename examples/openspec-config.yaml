@@ -1,0 +1,15 @@
+# Merge the applicable fields into your existing config; do not replace it.
+schema: spec-driven
+context: |
+  Stack: Python 3.11+ with unittest. Use existing project conventions.
+rules:
+  tasks:
+    - Each checkbox delivers one independently reviewable behavior in one commit.
+    - Keep tests and implementation in the same task; do not split TDD phases into tasks.
+    - Include acceptance criteria and relevant verification commands for each task.
+operations:
+  apply:
+    guidance:
+      - Use the installed openspec-tdd-apply skill as the task orchestrator.
+      - Require behavioral RED, GREEN, REFACTOR and independent review for each task.
+      - Commit one reviewed task and its checkbox before starting the next task.

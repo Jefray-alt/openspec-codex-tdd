@@ -1,0 +1,9 @@
+# Optional settings to MERGE into project .codex/config.toml.
+# Current Codex enables subagents by default. The installer leaves config alone.
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 2
+
+# Agent definitions live in .codex/agents/*.toml.
+# Model and reasoning settings are intentionally inherited; choose models
+# available to your account if you customize these files.
